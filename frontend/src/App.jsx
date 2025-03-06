@@ -1,19 +1,22 @@
+import React from 'react'
 import NavBar from './components/NavBar.jsx'
 import './App.css'
-import Treatment from './components/Treatment.jsx'
-import Overview from './components/Overview.jsx'
-import Footer from './components/Footer.jsx'
-import Contact from './components/Contact.jsx'
+import { Route, Routes } from 'react-router-dom'
+import Home from './pages/Home.jsx'
+import PatientRegistration from './pages/PatientRegistration.jsx'
+import PatientDashboard from './pages/PatientDashboard.jsx'
+
 
 function App() {
 
   return (
     <>
-      <NavBar/>
-      <Overview/>
-      <Treatment/>
-      <Contact/>
-      <Footer/>
+      {/* <NavBar/> */}
+      <Routes>
+        <Route path = '/' element = {<Home/>} ></Route>
+        <Route path = '/register' element = {<PatientRegistration/>} ></Route>
+        <Route path = '/:patient/dashboard' element = {<PatientDashboard/>} ></Route>
+      </Routes>
     </>
   )
 }
