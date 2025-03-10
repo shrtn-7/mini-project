@@ -1,5 +1,6 @@
 import React from 'react'
-import {useState, useEffect} from 'react'
+import { useState, useEffect } from 'react'
+import { NavLink } from 'react-router-dom';
 
 const NavBar = () => {
 
@@ -30,22 +31,24 @@ const NavBar = () => {
           <nav className='flex items-center justify-between my-6 p-6 h-10 '>
             {/*For Logo*/}
             <div className="shrink-0">
-              <a href="#">
+              <NavLink to="/">                
                 <img className='h-15 w-auto'
-                  src="https://www.devtopics.com/wp-content/uploads/2023/01/React-icon.svg_.png" alt="logo" />
-              </a>
+                    src="https://www.devtopics.com/wp-content/uploads/2023/01/React-icon.svg_.png" alt="logo" />
+              </NavLink>            
             </div>
             {/* Links */}
             <div className='hidden md:flex md:space-x-15'>
-              <a href="#">Home</a>
-              <a href="#">About Us</a>
-              <a href="#">Contact</a>
-              <a href="#">Treatments</a>
+              <NavLink to="/">Home</NavLink>
+              <NavLink to="/about">About Us</NavLink>
+              <NavLink to="/contact">Contact</NavLink>
+              <NavLink tp="/treatments">Treatments</NavLink>
             </div>
 
             {/* Desktop Login Button */}
             <div className="hidden md:flex">
-              <button className="px-4 py-2 cursor-pointer bg-blue-500 hover:bg-blue-600 hover:scale-105 transform transition duration-200 text-white font-bold rounded-full">Log In</button>
+              <NavLink to="/register">
+                <button className="px-4 py-2 cursor-pointer bg-blue-500 hover:bg-blue-600 hover:scale-105 transform transition duration-200 text-white font-bold rounded-full">Log In</button>
+              </NavLink>
             </div>
           </nav>
         </header>

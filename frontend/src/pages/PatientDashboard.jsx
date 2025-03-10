@@ -1,7 +1,9 @@
 // PatientDashboard.js
 import React, { useState } from "react";
+import { useParams } from 'react-router-dom'
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
+  
   return (
     <div
       className={`fixed inset-y-0 left-0 bg-gray-800 text-white w-64 p-5 transition-transform transform ${
@@ -55,6 +57,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 };
 
 const DashboardContent = ({ toggleSidebar }) => {
+  const params = useParams();
   return (
     <div className="flex-1 p-6 md:p-8">
       {/* Mobile menu button */}
@@ -71,7 +74,7 @@ const DashboardContent = ({ toggleSidebar }) => {
         </svg>
       </button>
 
-      <h2 className="text-2xl font-bold mb-6">Welcome, John Doe</h2>
+      <h2 className="text-2xl font-bold mb-6">Welcome, {params.patient}</h2>
       <div className="mb-8">
         <h3 className="text-xl font-semibold mb-3">Upcoming Appointments</h3>
         <ul className="list-disc pl-5">
