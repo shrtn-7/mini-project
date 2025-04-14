@@ -2,17 +2,22 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import dayjs from "dayjs";
 
+const WORK_START_HOUR = 11;
+const WORK_END_HOUR = 19;
+
 function AppointmentSystem() {
   const [appointments, setAppointments] = useState([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [bookedTimes, setBookedTimes] = useState([]);
+  const [isSunday, setIsSunday] = useState(false); // State to track if Sunday is selected
+  const [dateError, setDateError] = useState(""); // Error message for date selection
 
   const token = localStorage.getItem("token");
 
-  // Available time slots from 9:00 to 17:00
-  const timeSlots = Array.from({ length: 9 }, (_, i) => {
-    const hour = 9 + i;
+  // Generate time slots ONLY within working hours
+  const timeSlots = Array.from({ length: WORK_END_HOUR - WORK_START_HOUR }, (_, i) => {
+    const hour = WORK_START_HOUR + i;
     return `${hour.toString().padStart(2, "0")}:00`;
   });
 
@@ -39,12 +44,31 @@ function AppointmentSystem() {
     setBookedTimes(filtered);
   }, [selectedDate, appointments]);
 
+  const handleDateChange = (e) => {
+    const dateValue = e.target.value;
+    setSelectedDate(dateValue);
+    setSelectedTime(""); // Reset time when date changes
+    setDateError("");    // Reset date error
+    setIsSunday(false);  // Reset Sunday flag
+
+    if (dateValue) {
+      const dayOfWeek = dayjs(dateValue).day(); // Sunday is 0
+      if (dayOfWeek === 0) {
+        setIsSunday(true);
+        setDateError("Clinic is closed on Sundays. Please select another date.");
+      }
+    }
+  };
+
   const handleBooking = async () => {
     if (!selectedDate || !selectedTime) {
       return alert("Please select both date and time!");
     }
+    if (isSunday) { // Double check
+      return alert("Cannot book on Sunday.");
+    }
 
-    const appointmentDateTime = `${selectedDate} ${selectedTime}`;
+    const appointmentDateTime = dayjs(`${selectedDate} ${selectedTime}`).format('YYYY-MM-DD HH:mm:00');
 
     try {
       const res = await axios.post(
@@ -70,38 +94,53 @@ function AppointmentSystem() {
   return (
     <div className="p-4">
       <h2 className="text-2xl font-bold">Book an Appointment</h2>
+      <p className="text-gray-600 mb-4">Clinic Hours: Monday - Saturday, 11:00 AM - 7:00 PM</p>
 
-      <div className="mt-4 flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-3">
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="border p-2"
-          min={dayjs().format("YYYY-MM-DD")}
-        />
+      <div className="mt-4 flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-3 items-start">
+        <div>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={handleDateChange} // Use the new handler
+            className={`border p-2 ${dateError ? 'border-red-500' : ''}`}
+            min={dayjs().format("YYYY-MM-DD")}
+          />
+          {dateError && <p className="text-red-500 text-xs mt-1">{dateError}</p>}
+        </div>
 
         <select
           value={selectedTime}
           onChange={(e) => setSelectedTime(e.target.value)}
           className="border p-2"
-          disabled={!selectedDate}
+          // Disable if no date selected OR if it's Sunday
+          disabled={!selectedDate || isSunday}
         >
           <option value="">Select Time</option>
-          {timeSlots.map((time) => (
-            <option
-              key={time}
-              value={time}
-              disabled={bookedTimes.includes(time)}
-            >
-              {time} {bookedTimes.includes(time) ? "(Booked)" : ""}
-            </option>
-          ))}
+            {timeSlots.map((time) => {
+                const isBooked = bookedTimes.includes(time); // Check if already booked
+                // Add check here later if fetching blocked slots from backend
+                const isDisabled = isBooked /* || isBlocked */; 
+                
+                return (
+                <option
+                    key={time}
+                    value={time}
+                    disabled={isDisabled} 
+                >
+                    {/* Display time in AM/PM format */}
+                    {dayjs(`1970-01-01 ${time}`).format('h:mm A')} 
+                    {isBooked ? " (Booked)" : ""}
+                    {/* {isBlocked ? " (Unavailable)" : ""} */}
+                </option>
+                );
+            })}
         </select>
 
         <button
           onClick={handleBooking}
-          className="bg-green-600 text-white px-4 py-2 rounded"
-          disabled={!selectedDate || !selectedTime}
+          className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            // Disable if no date/time selected OR if it's Sunday
+            disabled={!selectedDate || !selectedTime || isSunday}
         >
           Book
         </button>

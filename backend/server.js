@@ -10,6 +10,8 @@ const authRoutes = require("./routes/auth");
 const appointmentRoutes = require("./routes/appointments"); // Import appointment routes
 const medicalRecordRoutes = require("./routes/medicalRecords");
 const userRoutes = require('./routes/users'); // Import user routes
+const availabilityRoutes = require('./routes/availability'); 
+
 
 const app = express();
 app.use(cors());
@@ -41,6 +43,9 @@ app.use("/medical-records", medicalRecordRoutes);
 
 // Use users routes
 app.use('/users', userRoutes);
+
+// Use availability routes
+app.use('/availability', availabilityRoutes); 
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -8,53 +8,150 @@ const dayjs = require("dayjs");
 const router = express.Router();
 
 // BOOK APPOINTMENT (Only for Patients)
-router.post("/book", authMiddleware, (req, res) => {
-    const { appointment_date } = req.body;
+const WORK_START_HOUR = 11; 
+const WORK_END_HOUR = 19; 
+router.post("/book", authMiddleware, async (req, res) => { // Made async for potential awaits
+    const { appointment_date } = req.body; 
     const patient_id = req.user.id;
-    const patient_email = req.user.email;
+    const patient_email = req.user.email; 
 
-    db.query(
-        "SELECT * FROM appointments WHERE appointment_date = ?",
-        [appointment_date],
-        (err, result) => {
-            if (err) return res.status(500).json({ error: err.message });
+    if (!appointment_date) {
+        return res.status(400).json({ error: "appointment_date is required." });
+    }
 
-            if (result.length > 0) {
-                return res.status(400).json({ error: "This time slot is already booked." });
-            }
+    const requestedSlot = dayjs(appointment_date); // Use dayjs object
 
-            db.query(
-                "INSERT INTO appointments (patient_id, appointment_date, status) VALUES (?, ?, 'pending')",
-                [patient_id, appointment_date],
-                (err, result) => {
-                    if (err) return res.status(500).json({ error: err.message });
+    if (!requestedSlot.isValid()) {
+        return res.status(400).json({ error: "Invalid date/time format provided." });
+    }
+    
+    // Format consistently for DB interactions
+    const formattedDateTime = requestedSlot.format('YYYY-MM-DD HH:mm:00');
+    const requestedDate = requestedSlot.format('YYYY-MM-DD');
 
-                    const appointmentDateTime = dayjs(appointment_date);
-                    const notifyTime = appointmentDateTime.subtract(1, "hour");
+    // --- Start Availability Checks ---
 
-                    const cronTime = `${notifyTime.minute()} ${notifyTime.hour()} ${notifyTime.date()} ${notifyTime.month() + 1} *`;
+    // 1. Check Day of Week (Sunday is 0)
+    if (requestedSlot.day() === 0) {
+        return res.status(400).json({ error: "Booking unavailable: Clinic is closed on Sundays." });
+    }
 
-                    cron.schedule(cronTime, () => {
-                        sendEmail(
-                            patient_email,
-                            patient_email,
-                            "Appointment Reminder",
-                            `Hi, you have an appointment at ${appointmentDateTime.format("YYYY-MM-DD HH:mm")}.`
-                        ).then(() => {
-                            console.log("Reminder email sent to:", patient_email);
-                        }).catch((err) => {
-                            console.error("Error sending reminder email", err);
-                        });
-                    }, {
-                        timezone: "Asia/Kolkata"
-                    });
+    // 2. Check Time of Day (Working Hours: 11:00 - 18:xx)
+    if (requestedSlot.hour() < WORK_START_HOUR || requestedSlot.hour() >= WORK_END_HOUR) {
+         return res.status(400).json({ error: `Booking unavailable: Clinic hours are ${WORK_START_HOUR}:00 AM to ${WORK_END_HOUR-12}:00 PM.` });
+    }
 
-                    res.status(201).json({ message: "Appointment booked successfully!" });
-                }
-            );
+    try {
+        // 3. Check if the entire day is blocked
+        const [dayBlocks] = await db.promise().query(
+            "SELECT id FROM blocked_days WHERE block_date = ?", // Might need doctor_id if multi-doctor in future
+            [requestedDate]
+        );
+        if (dayBlocks.length > 0) {
+            return res.status(400).json({ error: "Booking unavailable: The doctor is unavailable on this date." });
         }
-    );
+
+        // 4. Check if the specific time slot is blocked
+        const [slotBlocks] = await db.promise().query(
+             "SELECT id FROM blocked_time_slots WHERE slot_datetime = ?", // Might need doctor_id if multi-doctor
+             [formattedDateTime]
+        );
+        if (slotBlocks.length > 0) {
+            return res.status(400).json({ error: "Booking unavailable: This specific time slot is blocked." });
+        }
+
+        // 5. Check for existing appointment at this exact time
+        const [existingAppointments] = await db.promise().query(
+            "SELECT id FROM appointments WHERE appointment_date = ?",
+            [formattedDateTime]
+        );
+        if (existingAppointments.length > 0) {
+            return res.status(400).json({ error: "Booking unavailable: This time slot is already booked." });
+        }
+
+        // --- All Checks Passed: Insert Appointment ---
+        
+        const [insertResult] = await db.promise().query(
+            "INSERT INTO appointments (patient_id, appointment_date, status) VALUES (?, ?, 'pending')",
+            [patient_id, formattedDateTime]
+        );
+
+        // --- Keep the Email Reminder Logic ---
+        const appointmentDateTime = dayjs(formattedDateTime); // Use dayjs object
+        // ... (rest of the cron/email logic remains the same) ...
+         const notifyTime = appointmentDateTime.subtract(1, "hour");
+         const cronTime = `${notifyTime.minute()} ${notifyTime.hour()} ${notifyTime.date()} ${notifyTime.month() + 1} *`;
+         
+         cron.schedule(cronTime, () => {
+             sendEmail( 
+                 patient_email, 
+                 "Appointment Reminder", 
+                 `Hi, you have an appointment scheduled for ${appointmentDateTime.format("YYYY-MM-DD HH:mm")}.` 
+             ).then(() => {
+                 console.log(`Reminder email scheduled for ${patient_email} at ${cronTime}`);
+             }).catch((emailErr) => {
+                 console.error("Error scheduling/sending reminder email:", emailErr);
+             });
+         }, {
+             scheduled: true,
+             timezone: "Asia/Kolkata" // Use appropriate timezone
+         });
+        // --- End Email Reminder Logic ---
+
+        res.status(201).json({ message: "Appointment booked successfully!" });
+
+    } catch (dbError) {
+        console.error("Database error during booking process:", dbError);
+        return res.status(500).json({ error: "An error occurred during the booking process." });
+    }
 });
+// router.post("/book", authMiddleware, (req, res) => {
+//     const { appointment_date } = req.body;
+//     const patient_id = req.user.id;
+//     const patient_email = req.user.email;
+
+//     db.query(
+//         "SELECT * FROM appointments WHERE appointment_date = ?",
+//         [appointment_date],
+//         (err, result) => {
+//             if (err) return res.status(500).json({ error: err.message });
+
+//             if (result.length > 0) {
+//                 return res.status(400).json({ error: "This time slot is already booked." });
+//             }
+
+//             db.query(
+//                 "INSERT INTO appointments (patient_id, appointment_date, status) VALUES (?, ?, 'pending')",
+//                 [patient_id, appointment_date],
+//                 (err, result) => {
+//                     if (err) return res.status(500).json({ error: err.message });
+
+//                     const appointmentDateTime = dayjs(appointment_date);
+//                     const notifyTime = appointmentDateTime.subtract(1, "hour");
+
+//                     const cronTime = `${notifyTime.minute()} ${notifyTime.hour()} ${notifyTime.date()} ${notifyTime.month() + 1} *`;
+
+//                     cron.schedule(cronTime, () => {
+//                         sendEmail(
+//                             patient_email,
+//                             patient_email,
+//                             "Appointment Reminder",
+//                             `Hi, you have an appointment at ${appointmentDateTime.format("YYYY-MM-DD HH:mm")}.`
+//                         ).then(() => {
+//                             console.log("Reminder email sent to:", patient_email);
+//                         }).catch((err) => {
+//                             console.error("Error sending reminder email", err);
+//                         });
+//                     }, {
+//                         timezone: "Asia/Kolkata"
+//                     });
+
+//                     res.status(201).json({ message: "Appointment booked successfully!" });
+//                 }
+//             );
+//         }
+//     );
+// });
 
 // GET APPOINTMENTS (Modified for Doctor Role)
 router.get("/", authMiddleware, (req, res) => {
