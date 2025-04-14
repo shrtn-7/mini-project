@@ -9,6 +9,7 @@ const db = require("./db");
 const authRoutes = require("./routes/auth");
 const appointmentRoutes = require("./routes/appointments"); // Import appointment routes
 const medicalRecordRoutes = require("./routes/medicalRecords");
+const userRoutes = require('./routes/users'); // Import user routes
 
 const app = express();
 app.use(cors());
@@ -37,6 +38,9 @@ app.use("/appointments", appointmentRoutes);
 
 // Use medical records routes
 app.use("/medical-records", medicalRecordRoutes);
+
+// Use users routes
+app.use('/users', userRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
