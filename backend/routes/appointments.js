@@ -56,18 +56,41 @@ router.post("/book", authMiddleware, (req, res) => {
     );
 });
 
-// GET APPOINTMENTS
+// GET APPOINTMENTS (Modified for Doctor Role)
 router.get("/", authMiddleware, (req, res) => {
     const user_id = req.user.id;
     const role = req.user.role;
 
-    const query = role === "doctor"
-        ? "SELECT * FROM appointments"
-        : "SELECT * FROM appointments WHERE patient_id = ?";
-    const params = role === "doctor" ? [] : [user_id];
+    let query = "";
+    let params = [];
+
+    if (role === "doctor") {
+        // Doctors get all appointments, joined with user details to get patient name
+        query = `
+            SELECT 
+                a.id, 
+                a.patient_id, 
+                a.appointment_date, 
+                a.status, 
+                u.name AS patientName 
+            FROM 
+                appointments a
+            JOIN 
+                users u ON a.patient_id = u.id
+            ORDER BY 
+                a.appointment_date ASC`; // Optional: Order by date
+        params = []; // No specific user ID needed for doctors fetching all
+    } else {
+        // Patients get only their own appointments
+        query = "SELECT * FROM appointments WHERE patient_id = ? ORDER BY appointment_date ASC";
+        params = [user_id];
+    }
 
     db.query(query, params, (err, result) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error("Error fetching appointments:", err); // Log the error
+            return res.status(500).json({ error: "Failed to fetch appointments: " + err.message });
+        }
         res.json(result);
     });
 });

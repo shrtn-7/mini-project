@@ -57,7 +57,7 @@ router.get("/", authMiddleware, (req, res) => {
     );
 });
 
-// GET PATIENT MEDICAL RECORDS (Only for Doctors)
+// GET PATIENT ME DICAL RECORDS (Only for Doctors)
 router.get("/:patient_id", authMiddleware, (req, res) => {
     if (req.user.role !== "doctor") return res.status(403).json({ error: "Access denied!" });
 

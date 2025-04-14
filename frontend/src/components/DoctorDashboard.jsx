@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useContext, useState, useEffect } from "react";
+import { UserContext } from "../context/UserContext";
 import axios from "axios";
 
-function DoctorDashboard({ user }) {
+function DoctorDashboard() {
+  const { user } = useContext(UserContext) || {};
   const [appointments, setAppointments] = useState([]);
   const [medicalRecords, setMedicalRecords] = useState([]);
 
@@ -11,7 +13,7 @@ function DoctorDashboard({ user }) {
     // Fetch appointments and medical records for the doctor
     const fetchAppointments = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/appointments/doctor", {
+        const res = await axios.get("http://localhost:5000/appointments", { // Use the correct endpoint
           headers: { Authorization: `Bearer ${token}` },
         });
         setAppointments(res.data);
