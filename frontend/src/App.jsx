@@ -9,14 +9,13 @@ import AppointmentSystem from "./components/AppointmentSystem";
 import MedicalRecords from "./components/MedicalRecords";
 
 function App() {
-  const [user, setUser] = useState(null); // Managing user state
 
   return (
     <>
       <Navbar />
       <div className="container mx-auto p-4">
         <Routes>
-          <Route path="/login" element={<Login setUser={setUser} />} /> {/* Pass setUser */}
+          <Route path="/login" element={<Login/>} /> 
           <Route path="/register" element={<Register />} />
           <Route path="/patient-dashboard" element={<PatientDashboard />} />
           <Route path="/doctor-dashboard" element={<DoctorDashboard />} />

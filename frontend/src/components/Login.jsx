@@ -1,14 +1,27 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useContext } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { UserContext } from "../context/UserContext";
 
-function Login({ setUser }) {
+function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  // --- Get setUser from context ---
+  const { setUser } = useContext(UserContext);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
+
+    // Ensure setUser is available from context provider
+    if (!setUser) {
+      console.error("Login Error: setUser context function is unavailable.");
+      setError("An internal error occurred. Please try again later.");
+      return;
+    }
 
     try {
       const response = await axios.post("http://localhost:5000/auth/login", {
@@ -16,16 +29,19 @@ function Login({ setUser }) {
         password,
       });
 
-      const { user, token } = response.data;
+      const { user: loggedInUser, token } = response.data;
 
-      // Optional: Store token in localStorage for protected routes
-      localStorage.setItem("token", token);
-      setUser(user);
+      localStorage.setItem("token", token); // Store the new token
+
+      setUser(loggedInUser);
 
       // Redirect based on role
-      navigate(user.role === "doctor" ? "/doctor-dashboard" : "/patient-dashboard");
+      navigate(loggedInUser.role === "doctor" ? "/doctor-dashboard" : "/patient-dashboard");
     } catch (err) {
-      alert(err.response?.data?.error || "Login failed");
+      console.error("Login API failed:", err);
+      const errorMessage = err.response?.data?.error || // Check for backend error first
+        (err instanceof ReferenceError ? "An internal login error occurred." : "Login failed. Please check credentials."); // Show generic if it was the ReferenceError
+      setError(errorMessage);
     }
   };
 
@@ -38,6 +54,7 @@ function Login({ setUser }) {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required
           className="border p-2 rounded"
         />
         <input
@@ -45,10 +62,16 @@ function Login({ setUser }) {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required
           className="border p-2 rounded"
         />
+        {error && <p className="text-red-500">{error}</p>}
+
         <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Login</button>
       </form>
+      <p className="text-center text-sm mt-4 text-gray-600">
+        Don't have an account? <Link to="/register" className="text-blue-600 hover:underline">Register here</Link>
+      </p>
     </div>
   );
 }
