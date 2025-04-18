@@ -24,7 +24,7 @@ function Navbar() {
   const homeLink = !user ? '/login' : (user.role === 'doctor' ? '/doctor-dashboard' : '/patient-dashboard');
 
   return (
-    <nav className="bg-blue-600 text-white p-4 flex justify-between items-center shadow-md">
+    <nav className="bg-blue-600 h-16 text-white p-4 flex justify-between items-center shadow-md">
       <Link to={homeLink} className="text-xl font-bold hover:text-blue-200 transition-colors"> 
           MediSync
       </Link>
