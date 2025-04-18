@@ -5,15 +5,22 @@ const cron = require("node-cron");
 const sendEmail = require("../routes/mailer");
 const dayjs = require("dayjs");
 
+const REMINDER_INTERVALS_HOURS = [12, 2.5]; // Reminder intervals in hours before the appointment time
+
 const router = express.Router();
 
 // BOOK APPOINTMENT (Only for Patients)
-const WORK_START_HOUR = 11; 
-const WORK_END_HOUR = 19; 
+const WORK_START_HOUR = 11;
+const WORK_END_HOUR = 19;
+
+
 router.post("/book", authMiddleware, async (req, res) => { // Made async for potential awaits
-    const { appointment_date } = req.body; 
+    if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: "Access denied. Only patients can book appointments." });
+    }
+    const { appointment_date } = req.body;
     const patient_id = req.user.id;
-    const patient_email = req.user.email; 
+    const patient_email = req.user.email;
 
     if (!appointment_date) {
         return res.status(400).json({ error: "appointment_date is required." });
@@ -24,7 +31,7 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
     if (!requestedSlot.isValid()) {
         return res.status(400).json({ error: "Invalid date/time format provided." });
     }
-    
+
     // Format consistently for DB interactions
     const formattedDateTime = requestedSlot.format('YYYY-MM-DD HH:mm:00');
     const requestedDate = requestedSlot.format('YYYY-MM-DD');
@@ -38,7 +45,7 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
 
     // 2. Check Time of Day (Working Hours: 11:00 - 18:xx)
     if (requestedSlot.hour() < WORK_START_HOUR || requestedSlot.hour() >= WORK_END_HOUR) {
-         return res.status(400).json({ error: `Booking unavailable: Clinic hours are ${WORK_START_HOUR}:00 AM to ${WORK_END_HOUR-12}:00 PM.` });
+        return res.status(400).json({ error: `Booking unavailable: Clinic hours are ${WORK_START_HOUR}:00 AM to ${WORK_END_HOUR - 12}:00 PM.` });
     }
 
     try {
@@ -53,8 +60,8 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
 
         // 4. Check if the specific time slot is blocked
         const [slotBlocks] = await db.promise().query(
-             "SELECT id FROM blocked_time_slots WHERE slot_datetime = ?", // Might need doctor_id if multi-doctor
-             [formattedDateTime]
+            "SELECT id FROM blocked_time_slots WHERE slot_datetime = ?", // Might need doctor_id if multi-doctor
+            [formattedDateTime]
         );
         if (slotBlocks.length > 0) {
             return res.status(400).json({ error: "Booking unavailable: This specific time slot is blocked." });
@@ -70,39 +77,82 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
         }
 
         // --- All Checks Passed: Insert Appointment ---
-        
+
         const [insertResult] = await db.promise().query(
             "INSERT INTO appointments (patient_id, appointment_date, status) VALUES (?, ?, 'pending')",
             [patient_id, formattedDateTime]
         );
 
-        // --- Keep the Email Reminder Logic ---
-        const appointmentDateTime = dayjs(formattedDateTime); // Use dayjs object
-        // ... (rest of the cron/email logic remains the same) ...
-         const notifyTime = appointmentDateTime.subtract(1, "hour");
-         const cronTime = `${notifyTime.minute()} ${notifyTime.hour()} ${notifyTime.date()} ${notifyTime.month() + 1} *`;
-         
-         cron.schedule(cronTime, () => {
-             sendEmail( 
-                 patient_email, 
-                 "Appointment Reminder", 
-                 `Hi, you have an appointment scheduled for ${appointmentDateTime.format("YYYY-MM-DD HH:mm")}.` 
-             ).then(() => {
-                 console.log(`Reminder email scheduled for ${patient_email} at ${cronTime}`);
-             }).catch((emailErr) => {
-                 console.error("Error scheduling/sending reminder email:", emailErr);
-             });
-         }, {
-             scheduled: true,
-             timezone: "Asia/Kolkata" // Use appropriate timezone
-         });
-        // --- End Email Reminder Logic ---
+        // --- NEW: Fetch the newly created appointment ---
+        let newAppointment = null;
+        if (insertResult.insertId) {
+            const [rows] = await db.promise().query(
+                "SELECT id, patient_id, appointment_date, status FROM appointments WHERE id = ?",
+                [insertResult.insertId]
+            );
+            if (rows.length > 0) {
+                newAppointment = rows[0];
+                // Format the date consistently before sending back (optional but good practice)
+                newAppointment.appointment_date = dayjs(newAppointment.appointment_date).format('YYYY-MM-DD HH:mm:ss');
+            }
+        }
+        // --- End NEW ---
 
-        res.status(201).json({ message: "Appointment booked successfully!" });
+        // --- Schedule Multiple Reminders ---
+        const appointmentDateTime = dayjs(formattedDateTime); // Use dayjs object
+        const patientEmailForReminder = patient_email; // Use email fetched/validated earlier
+
+        console.log(`SCHEDULING: Attempting reminders for appointment at ${appointmentDateTime.format()} for ${patientEmailForReminder}`);
+
+        REMINDER_INTERVALS_HOURS.forEach(interval => {
+            const notifyTime = appointmentDateTime.subtract(interval, 'hour');
+
+            // Don't schedule reminders for times that have already passed
+            if (dayjs().isAfter(notifyTime)) {
+                console.log(`SCHEDULING: Skipping ${interval}hr reminder for ${appointmentDateTime.format()} as notification time ${notifyTime.format()} is in the past.`);
+                return; // Skip to the next interval
+            }
+
+            // Format for node-cron: 'minute hour dayOfMonth month dayOfWeek' (* means 'every')
+            const cronTime = `${notifyTime.minute()} ${notifyTime.hour()} ${notifyTime.date()} ${notifyTime.month() + 1} *`;
+            const subject = `Appointment Reminder - ${interval} Hour${interval > 1 ? 's' : ''} Notice`;
+            const body = `Hi,\n\nThis is a reminder for your appointment scheduled at MediSync on ${appointmentDateTime.format("dddd, MMMM D, YYYY")} at ${appointmentDateTime.format("h:mm A")}.\n\nSee you soon!`;
+
+            try {
+                // Schedule the email sending task
+                cron.schedule(cronTime, () => {
+                    console.log(`CRON JOB TRIGGERED: Sending ${interval}hr reminder to ${patientEmailForReminder} for appointment at ${appointmentDateTime.format()}`);
+                    sendEmail(patientEmailForReminder, subject, body)
+                        .then(() => console.log(`EMAIL: ${interval}hr reminder sent successfully to ${patientEmailForReminder}.`))
+                        .catch(err => console.error(`EMAIL ERROR: Failed sending ${interval}hr reminder to ${patientEmailForReminder}:`, err));
+                }, {
+                    scheduled: true,
+                    timezone: "Asia/Kolkata" // IMPORTANT: Set to your server's or target audience's timezone
+                });
+                console.log(`SCHEDULING: ${interval}hr reminder for ${appointmentDateTime.format()} successfully scheduled at cron time: ${cronTime} (Timezone: Asia/Kolkata)`);
+
+            } catch (scheduleError) {
+                // This catches errors during the scheduling itself (e.g., invalid cronTime format)
+                console.error(`SCHEDULING ERROR: Failed to schedule ${interval}hr reminder using node-cron for cron time ${cronTime}:`, scheduleError);
+            }
+        });
+
+        // --- Send Success Response with New Appointment Data ---
+        if (!res.headersSent) {
+            res.status(201).json({
+                message: "Appointment booked successfully!",
+                appointment: newAppointment // Include the newly created appointment
+            });
+        }
 
     } catch (dbError) {
         console.error("Database error during booking process:", dbError);
-        return res.status(500).json({ error: "An error occurred during the booking process." });
+        if (!res.headersSent) {
+            return res.status(500).json({ error: "An error occurred during the booking process." });
+        } else {
+            // If response already sent, just log the error after booking attempt failed
+            console.error("Error occurred after response was sent in /book route.");
+        }
     }
 });
 
