@@ -13,6 +13,7 @@ function AppointmentSystem() {
   const [isSunday, setIsSunday] = useState(false);
   const [dateError, setDateError] = useState("");
   const [isLoading, setIsLoading] = useState(false); 
+  const [isCancelling, setIsCancelling] = useState(null);
 
   const token = localStorage.getItem("token");
 
@@ -133,6 +134,50 @@ function AppointmentSystem() {
     }
   };
 
+  const handleCancelAppointment = async (appointmentId) => {
+    // Find the appointment details for the confirmation message
+    const appointmentToCancel = appointments.find(appt => appt.id === appointmentId);
+    if (!appointmentToCancel) return; // Should not happen
+
+    const formattedTime = dayjs(appointmentToCancel.appointment_date).format("h:mm A");
+    const formattedDate = dayjs(appointmentToCancel.appointment_date).format("MMMM D, YYYY");
+
+    const confirmCancel = window.confirm(`Are you sure you want to cancel the appointment for ${formattedTime} on ${formattedDate}?`);
+
+    if (confirmCancel) {
+      setIsCancelling(appointmentId); // Set cancelling state for this specific appointment
+      try {
+        // Call the backend endpoint to delete the appointment
+        await axios.delete(`http://localhost:5000/appointments/cancel/${appointmentId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // --- Direct State Update on Success ---
+        // Remove the cancelled appointment from the local state immediately
+        setAppointments(prevAppointments => 
+          prevAppointments.filter(appt => appt.id !== appointmentId)
+        );
+
+        alert("Appointment cancelled successfully!"); // Success feedback
+
+      } catch (err) {
+        console.error("Cancellation error occurred!", err);
+         if (err.response) {
+           console.error("Error response data:", err.response.data);
+           alert(err.response.data.error || "Cancellation failed! Please try again.");
+        } else {
+           alert("Cancellation failed! An unknown error occurred.");
+        }
+        // Optionally refetch list on error to ensure consistency
+        // fetchAppointments(); 
+      } finally {
+        setIsCancelling(null); // Reset cancelling state
+      }
+    } else {
+      console.log("Cancellation cancelled by user.");
+    }
+  };
+
   // --- JSX Rendering (No changes needed from previous version) ---
   return (
     <div className="p-4">
@@ -183,20 +228,46 @@ function AppointmentSystem() {
         </button>
       </div>
 
-       {/* Display Loading state for appointments list */}
-       {isLoading && appointments.length === 0 && <p className="mt-4 text-blue-600">Loading appointments...</p>} {/* Show loading only if list is empty */}
+       {/* Appointments List Section */}
+      <h3 className="mt-8 text-xl font-semibold border-t pt-4">Your Appointments</h3>
+      {isLoading && appointments.length === 0 && <p className="mt-4 text-blue-600">Loading appointments...</p>}
 
-      {/* Appointments List */}
-      <h3 className="mt-6 text-xl font-semibold">Your Appointments</h3>
       {!isLoading && appointments.length === 0 ? (
           <p className="mt-2 text-gray-500">No appointments scheduled yet.</p>
         ) : ( // Render list even if loading, it will just update
-          <ul className="mt-2">
+          <ul className="mt-2 space-y-3"> {/* Added space-y-3 */}
             {appointments.map((appt) => (
-              <li key={appt.id} className="border p-2 mt-2 rounded">
-                {dayjs(appt.appointment_date).format("YYYY-MM-DD h:mm A")} - Status:{" "}
-                <span className="font-semibold">{appt.status}</span>
+              // --- MODIFIED: List item with Cancel button ---
+              <li 
+                key={appt.id} 
+                className="border p-3 rounded shadow-sm flex justify-between items-center bg-white" // Added padding, shadow, flex
+              >
+                {/* Appointment Details */}
+                <div>
+                  <span className="font-medium">
+                    {dayjs(appt.appointment_date).format("YYYY-MM-DD h:mm A")}
+                  </span>
+                  <span className={`ml-3 text-sm px-2 py-0.5 rounded ${appt.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                     Status: {appt.status}
+                  </span>
+                </div>
+
+                {/* Cancel Button */}
+                <button
+                  onClick={() => handleCancelAppointment(appt.id)}
+                  // Disable button if this specific appointment is being cancelled
+                  disabled={isCancelling === appt.id} 
+                  className={`ml-4 px-3 py-1 rounded text-sm text-white transition-colors ${
+                    isCancelling === appt.id 
+                      ? 'bg-gray-400 cursor-not-allowed' 
+                      : 'bg-red-500 hover:bg-red-600' 
+                  }`}
+                >
+                  {/* Show different text while cancelling */}
+                  {isCancelling === appt.id ? 'Cancelling...' : 'Cancel'}
+                </button>
               </li>
+              // --- End MODIFIED ---
             ))}
           </ul>
         )
