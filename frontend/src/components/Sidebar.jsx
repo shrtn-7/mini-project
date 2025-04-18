@@ -21,7 +21,7 @@ function Sidebar() {
     { name: 'Dashboard', href: '/doctor-dashboard', icon: LayoutDashboard },
     { name: 'Patients', href: '#', icon: Users }, // Placeholder link
     { name: 'Appointments', href: '/doctor/all-appointments', icon: CalendarDays }, // Placeholder link
-    { name: 'Settings', href: '#', icon: Settings }, // Placeholder link
+    { name: 'Settings', href: '/doctor/settings', icon: Settings }, // Placeholder link
   ];
 
   return (

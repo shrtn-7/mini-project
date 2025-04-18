@@ -11,6 +11,7 @@ const appointmentRoutes = require("./routes/appointments"); // Import appointmen
 const medicalRecordRoutes = require("./routes/medicalRecords");
 const userRoutes = require('./routes/users'); // Import user routes
 const availabilityRoutes = require('./routes/availability'); 
+const scheduleRoutes = require('./routes/schedule');
 
 
 const app = express();
@@ -46,6 +47,9 @@ app.use('/users', userRoutes);
 
 // Use availability routes
 app.use('/availability', availabilityRoutes); 
+
+// Use schedule routes
+app.use('/schedule', scheduleRoutes); 
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
