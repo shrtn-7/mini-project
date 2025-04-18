@@ -15,6 +15,9 @@ const WORK_END_HOUR = 19;
 
 
 router.post("/book", authMiddleware, async (req, res) => { // Made async for potential awaits
+    if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: "Access denied. Only patients can book appointments." });
+    }
     const { appointment_date } = req.body;
     const patient_id = req.user.id;
     const patient_email = req.user.email;
@@ -80,6 +83,21 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
             [patient_id, formattedDateTime]
         );
 
+        // --- NEW: Fetch the newly created appointment ---
+        let newAppointment = null;
+        if (insertResult.insertId) {
+            const [rows] = await db.promise().query(
+                "SELECT id, patient_id, appointment_date, status FROM appointments WHERE id = ?",
+                [insertResult.insertId]
+            );
+            if (rows.length > 0) {
+                newAppointment = rows[0];
+                // Format the date consistently before sending back (optional but good practice)
+                newAppointment.appointment_date = dayjs(newAppointment.appointment_date).format('YYYY-MM-DD HH:mm:ss');
+            }
+        }
+        // --- End NEW ---
+
         // --- Schedule Multiple Reminders ---
         const appointmentDateTime = dayjs(formattedDateTime); // Use dayjs object
         const patientEmailForReminder = patient_email; // Use email fetched/validated earlier
@@ -118,6 +136,14 @@ router.post("/book", authMiddleware, async (req, res) => { // Made async for pot
                 console.error(`SCHEDULING ERROR: Failed to schedule ${interval}hr reminder using node-cron for cron time ${cronTime}:`, scheduleError);
             }
         });
+
+        // --- Send Success Response with New Appointment Data ---
+        if (!res.headersSent) {
+            res.status(201).json({
+                message: "Appointment booked successfully!",
+                appointment: newAppointment // Include the newly created appointment
+            });
+        }
 
     } catch (dbError) {
         console.error("Database error during booking process:", dbError);

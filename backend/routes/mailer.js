@@ -16,8 +16,8 @@ const transporter = nodemailer.createTransport({
     user: emailUser, // Use environment variable for email
     pass: emailPass, // Use environment variable for app password
   },
-  logger: true, // Enable logging for debugging purposes
-  debug: true, // Enable debug output for SMTP connection
+  logger: false, // Enable logging for debugging purposes
+  debug: false, // Enable debug output for SMTP connection
 });
 
 // Verify connection configuration (optional, but recommended for startup)
