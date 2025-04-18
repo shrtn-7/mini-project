@@ -7,6 +7,7 @@ import Register from "./components/Register";
 import PatientDashboard from "./components/PatientDashboard";
 import DoctorDashboard from "./components/DoctorDashboard";
 import AppointmentSystem from "./components/AppointmentSystem";
+import DoctorAllAppointments from "./components/DoctorAllAppointments";
 // import MedicalRecords from "./components/MedicalRecords"; // Uncomment if used
 import { UserContext } from './context/UserContext'; // Import UserContext
 
@@ -68,6 +69,8 @@ function App() {
             {/* Doctor Routes */}
             <Route path="/doctor-dashboard" element={<DoctorDashboard />} />
             {/* Add other doctor-specific routes here (e.g., /patients, /doctor-appointments) */}
+            
+            <Route path="/doctor/all-appointments" element={<DoctorAllAppointments />} />
             
             {/* Default Route Handler for '/' */}
             <Route path="/" element={<DefaultRoute />} />
