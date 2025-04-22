@@ -9,6 +9,7 @@ import DoctorDashboard from "./components/DoctorDashboard";
 import AppointmentSystem from "./components/AppointmentSystem";
 import DoctorAllAppointments from "./components/DoctorAllAppointments";
 import DoctorSettings from "./components/DoctorSettings";
+import PatientRecordUpload from './components/PatientRecordUpload';
 // import MedicalRecords from "./components/MedicalRecords"; // Uncomment if used
 import { UserContext } from './context/UserContext'; // Import UserContext
 
@@ -58,6 +59,7 @@ function App() {
         <main className="flex-grow p-6 overflow-y-auto bg-white"> 
           {/* Define application routes */}
           <Routes>
+            
             {/* Public Routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -65,13 +67,12 @@ function App() {
             {/* Patient Routes */}
             <Route path="/patient-dashboard" element={<PatientDashboard />} />
             <Route path="/book-appointment" element={<AppointmentSystem />} />
+            <Route path="/upload-record" element={<PatientRecordUpload />} />
             {/* Add other patient-specific routes here */}
 
             {/* Doctor Routes */}
             <Route path="/doctor-dashboard" element={<DoctorDashboard />} />
-            
             <Route path="/doctor/all-appointments" element={<DoctorAllAppointments />} />
-
             <Route path="/doctor/settings" element={<DoctorSettings />} /> 
             
             {/* Default Route Handler for '/' */}

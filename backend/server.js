@@ -12,11 +12,13 @@ const medicalRecordRoutes = require("./routes/medicalRecords");
 const userRoutes = require('./routes/users'); // Import user routes
 const availabilityRoutes = require('./routes/availability'); 
 const scheduleRoutes = require('./routes/schedule');
+const patientRoutes = require('./routes/patientRoutes');
 
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads')); 
 
 // Default route
 app.get("/", (req, res) => {
@@ -50,6 +52,9 @@ app.use('/availability', availabilityRoutes);
 
 // Use schedule routes
 app.use('/schedule', scheduleRoutes); 
+
+// Use patient routes
+app.use('/patient', patientRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

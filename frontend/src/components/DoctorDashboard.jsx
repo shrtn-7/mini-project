@@ -103,19 +103,25 @@ function DoctorDashboard() {
   // Function to handle clicking on a patient/appointment (Keep as is)
   const handleViewPatientDetails = async (patientId) => {
     if (!patientId) return;
+
     setSelectedPatientId(patientId);
     setIsModalOpen(true);
     setIsLoadingModal(true);
-    setModalData({ profile: null, records: [] }); 
+    setModalData({ profile: null, records: [] }); // Clear previous data
+
     try {
-      const [profileRes, recordsRes] = await Promise.all([
-        axios.get(`http://localhost:5000/users/${patientId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`http://localhost:5000/medical-records/${patientId}`, { headers: { Authorization: `Bearer ${token}` } })
-      ]);
-      setModalData({ profile: profileRes.data, records: recordsRes.data });
+      // Fetch patient profile and DETAILED medical records concurrently
+      // Use the endpoint defined in patientRoutes.js
+      const response = await axios.get(`http://localhost:5000/patient/profile-and-records/${patientId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+      });
+
+      // The response.data should contain { profile: {...}, records: [...] }
+      setModalData({ profile: response.data.profile, records: response.data.records });
+
     } catch (err) {
       console.error("Error fetching patient details or records:", err);
-      setModalData({ profile: null, records: [] }); 
+      setModalData({ profile: null, records: [] }); // Clear data on error
     } finally {
       setIsLoadingModal(false);
     }
