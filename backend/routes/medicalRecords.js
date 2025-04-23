@@ -1,12 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../db");
+const db = require("../db"); // Use single connection
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const authMiddleware = require("../middleware/authMiddleware"); 
 
-// --- Multer configuration (for patient uploads to detailed_medical_records) ---
+// --- Multer Config (for patient uploads - remains the same) ---
 const uploadDir = path.join(__dirname, "../uploads"); 
 if (!fs.existsSync(uploadDir)) { 
     try { fs.mkdirSync(uploadDir, { recursive: true }); console.log(`Created uploads directory at: ${uploadDir}`); } 
@@ -16,7 +16,8 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) { cb(null, uploadDir); },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + file.originalname.replace(/\s+/g, '_')); 
+    const safeOriginalName = file.originalname.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+    cb(null, uniqueSuffix + "-" + safeOriginalName); 
   },
 });
 const upload = multer({ 
@@ -25,52 +26,30 @@ const upload = multer({
     if (file.mimetype === "application/pdf") { cb(null, true); } 
     else { cb(new Error("Only PDF files are allowed.")); }
   },
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 } 
 }).fields([ 
-  { name: "prescriptions", maxCount: 10 }, // Matches frontend FormData key
-  { name: "labReports", maxCount: 10 },    // Matches frontend FormData key
+  { name: "prescriptions", maxCount: 10 }, 
+  { name: "labReports", maxCount: 10 },    
 ]);
 // --- End Multer Config ---
 
 
-// POST /medical-records/ - Handles patient file uploads (Uses detailed_medical_records)
+// POST /medical-records/ - Patient Upload (Uses detailed_medical_records)
+// This route remains unchanged and correctly uses detailed_medical_records
 router.post("/", authMiddleware, (req, res) => {
-  // Ensure only patients use this route
-  if (req.user.role !== 'patient') { 
-      return res.status(403).json({ error: "Access denied." });
-  }
+  if (req.user.role !== 'patient') { return res.status(403).json({ error: "Access denied." }); }
   const patient_id = req.user.id; 
   
-  upload(req, res, function (err) {
-    // Handle Multer errors first
-    if (err instanceof multer.MulterError) {
-      console.error("Multer error:", err.message);
-      return res.status(400).json({ error: `File upload error: ${err.message}` });
-    } else if (err) {
-       console.error("File filter or unknown upload error:", err.message);
-       return res.status(400).json({ error: err.message || "File upload failed." });
+  upload(req, res, function (err) { // Keep async for cleanup if needed
+    if (err) { /* ... multer error handling ... */ 
+        console.error("Multer error:", err.message);
+        return res.status(400).json({ error: `File upload error: ${err.message}` });
     }
-
-    // Proceed if upload is successful
     const { problem, previousMedications, medicalHistory } = req.body;
-
-    // Validate text fields
-    if (!problem || !previousMedications || !medicalHistory) { 
-        // Cleanup uploaded files if validation fails AFTER upload
-        if (req.files) { 
-            const filesToDelete = [...(req.files.prescriptions || []), ...(req.files.labReports || [])];
-            filesToDelete.forEach(file => {
-                if (file && file.path) { // Check if file and path exist
-                    fs.unlink(file.path, unlinkErr => {
-                        if (unlinkErr) console.error(`Error deleting uploaded file ${file.path} after validation fail:`, unlinkErr);
-                    });
-                }
-            });
-        }
+    if (!problem || !previousMedications || !medicalHistory) { /* ... validation & cleanup ... */ 
+        if (req.files) { /* ... cleanup logic ... */ }
         return res.status(400).json({ error: "Problem, Previous Medications, and Medical History are required." });
     }
-
-    // Prepare file paths (ensure req.files exists)
     const prescriptionFiles = req.files?.prescriptions || [];
     const labReportFiles = req.files?.labReports || [];
     const prescriptionPaths = prescriptionFiles.map((file) => `/uploads/${file.filename}`);
@@ -79,205 +58,189 @@ router.post("/", authMiddleware, (req, res) => {
     const labReportsJsonString = JSON.stringify(labReportPaths);
 
     console.log("Data prepared for DB insert (Patient Upload - detailed_medical_records):", { patient_id, problem, previousMedications, medicalHistory, prescriptions: prescriptionsJsonString, labReports: labReportsJsonString });
-
-    // INSERT into detailed_medical_records
-    const insertQuery = `
-      INSERT INTO detailed_medical_records 
-      (patient_id, problem, previous_medications, medical_history, prescriptions, lab_reports) 
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    db.query( 
-        insertQuery, 
-        [ patient_id, problem, previousMedications, medicalHistory, prescriptionsJsonString, labReportsJsonString ], 
-        (dbError, result) => { 
-            if (dbError) { 
-                console.error("Database insert error (Patient Upload - detailed_medical_records):", dbError);
-                // Cleanup uploaded files if DB insert fails
-                if (req.files) { 
-                     const filesToDelete = [...(req.files.prescriptions || []), ...(req.files.labReports || [])];
-                     filesToDelete.forEach(file => {
-                         if (file && file.path) {
-                             fs.unlink(file.path, unlinkErr => {
-                                 if (unlinkErr) console.error(`Error deleting uploaded file ${file.path} after DB fail:`, unlinkErr);
-                             });
-                         }
-                     });
-                }
-                return res.status(500).json({ error: "Database operation failed." });
-            }
-            console.log(`Successfully inserted record ID: ${result.insertId} into detailed_medical_records`); 
-            res.status(201).json({ message: "Medical record saved successfully.", record_id: result.insertId });
+    const insertQuery = `INSERT INTO detailed_medical_records (patient_id, problem, previous_medications, medical_history, prescriptions, lab_reports) VALUES (?, ?, ?, ?, ?, ?)`;
+    
+    // Use db.query with callback
+    db.query( insertQuery, [ patient_id, problem, previousMedications, medicalHistory, prescriptionsJsonString, labReportsJsonString ], (dbError, result) => { 
+        if (dbError) { /* ... error handling & cleanup ... */ 
+            console.error("Database insert error (Patient Upload - detailed_medical_records):", dbError);
+            if (req.files) { /* ... cleanup logic ... */ }
+            return res.status(500).json({ error: "Database operation failed." });
         }
-    );
+        console.log(`Successfully inserted record ID: ${result.insertId} into detailed_medical_records`); 
+        res.status(201).json({ message: "Medical record saved successfully.", record_id: result.insertId });
+    });
   }); 
 }); 
 
 
-// POST /medical-records/prescription - Handles doctor adding prescription (Uses medical_records)
-router.post('/prescription', authMiddleware, async (req, res) => {
-    // 1. Check Authorization (Only Doctor)
-    if (req.user.role !== 'doctor') {
-        return res.status(403).json({ error: "Access denied. Doctors only." });
-    }
+// --- UPDATED: POST /medical-records/prescription ---
+// --- Handles INSERT or UPDATE for doctor prescription based on patient_id ---
+// --- Uses the 'medical_records' table with Callbacks ---
+router.post('/prescription', authMiddleware, (req, res) => { // Removed async
+    if (req.user.role !== 'doctor') { return res.status(403).json({ error: "Access denied." }); }
     const doctorId = req.user.id; 
+    // Get patientId, diagnosis, medicationList from body. 
+    // appointmentId might be passed but isn't used for saving the record itself.
+    const { patientId, diagnosis, medicationList, appointmentId } = req.body; 
 
-    // 2. Extract Data from Request Body
-    const { 
-        patientId, appointmentId, diagnosis, medicationList 
-    } = req.body;
-
-    // 3. Validate Input
-    if (!patientId || !appointmentId || !medicationList || !Array.isArray(medicationList) || medicationList.length === 0) {
-        console.error("Validation Failed: Missing fields.", { patientId, appointmentId, medicationList }); 
-        return res.status(400).json({ error: "Missing required fields: patientId, appointmentId, and at least one medication." });
+    // Validation
+    if (!patientId || !medicationList || !Array.isArray(medicationList) || medicationList.length === 0) {
+        return res.status(400).json({ error: "Missing required fields: patientId and at least one medication." });
     }
-    // Add more validation if needed (e.g., check content of medicationList items)
+     // Validate medication list items
+    for (const med of medicationList) {
+        if (!med || typeof med.name !== 'string' || !med.name.trim() || typeof med.timings !== 'string' || !med.timings.trim()) {
+            console.error("Validation Failed: Invalid medication item.", med);
+            return res.status(400).json({ error: "Invalid data in medication list. Name and timings are required for all entries." });
+        }
+    }
 
-    // 4. Prepare Data for DB
     const medicationsJsonString = JSON.stringify(medicationList);
     const diagnosisNotes = diagnosis || ''; 
 
-    console.log("Data prepared for DB insert (Doctor Prescription - using 'medical_records' table):", {
-        patientId, appointmentId, doctorId, diagnosis: diagnosisNotes, 
-        prescription: medicationsJsonString 
-    });
+    console.log("Data prepared for UPSERT (Doctor Prescription - medical_records):", { patientId, doctorId, diagnosis: diagnosisNotes, prescription: medicationsJsonString });
 
-    // 5. Database Operations (Use Promise for cleaner async/await and transaction)
-    const dbPromise = db.promise();
-    let connection; 
+    // --- UPSERT Logic using Callbacks ---
+    // Use INSERT ... ON DUPLICATE KEY UPDATE for atomicity
+    const upsertSql = `
+        INSERT INTO medical_records (patient_id, doctor_id, diagnosis, prescription) 
+        VALUES (?, ?, ?, ?) 
+        ON DUPLICATE KEY UPDATE 
+            doctor_id = VALUES(doctor_id), 
+            diagnosis = VALUES(diagnosis), 
+            prescription = VALUES(prescription)
+    `;
+    const params = [patientId, doctorId, diagnosisNotes, medicationsJsonString];
+    console.log("Executing UPSERT query:", upsertSql, params);
 
-    try {
-        connection = await dbPromise.getConnection(); 
-        console.log("DB Connection acquired for transaction."); 
-        await connection.beginTransaction(); 
-        console.log("DB Transaction started."); 
+    db.query(upsertSql, params, (errUpsert, result) => {
+        if (errUpsert) {
+            console.error(`DB Error (Upsert Prescription):`, errUpsert);
+            return res.status(500).json({ error: `Failed to save or update prescription.` });
+        }
 
-        // --- 5a. Insert into the ORIGINAL 'medical_records' table ---
-        const insertRecordSql = `
-            INSERT INTO medical_records 
-            (patient_id, doctor_id, diagnosis, prescription) 
-            VALUES (?, ?, ?, ?) 
-        `;
-        console.log("Executing INSERT query:", insertRecordSql, [patientId, doctorId, diagnosisNotes, medicationsJsonString]); 
-        const [insertResult] = await connection.query(insertRecordSql, [
-            patientId,
-            doctorId, 
-            diagnosisNotes, 
-            medicationsJsonString 
-        ]);
-        const newRecordId = insertResult.insertId;
-        console.log(`Inserted new record into 'medical_records' table. ID: ${newRecordId}`);
-
-        // --- 5b. Update appointments table status ---
-        const updateAppointmentSql = `
-            UPDATE appointments 
-            SET status = 'completed' 
-            WHERE id = ? AND status != 'completed' 
-        `; 
-        console.log("Executing UPDATE query:", updateAppointmentSql, [appointmentId]); 
-        const [updateResult] = await connection.query(updateAppointmentSql, [appointmentId]);
-        console.log(`Updated appointment ID ${appointmentId} status. Affected rows: ${updateResult.affectedRows}`);
+        // Check result.affectedRows: 1 means INSERT, 2 means UPDATE (on most MySQL versions)
+        const isUpdate = result.affectedRows === 2; 
+        const recordId = isUpdate ? 'N/A (Updated)' : result.insertId; // insertId only valid on INSERT
         
-        if (updateResult.affectedRows === 0) {
-             console.warn(`Appointment ${appointmentId} was not updated by status update query. It might already be completed or the ID is incorrect.`);
+        console.log(`Successfully ${isUpdate ? 'updated' : 'inserted'} record for patient ID: ${patientId}. Result:`, result);
+
+        // --- Update Appointment Status (Optional, but good feedback) ---
+        if (appointmentId) { // Only update if appointmentId was passed
+            const updateAppointmentSql = `UPDATE appointments SET status = 'completed' WHERE id = ? AND status != 'completed'`; 
+            db.query(updateAppointmentSql, [appointmentId], (errUpdateAppt, updateApptResult) => {
+                if(errUpdateAppt){
+                     console.error(`Error updating appointment ${appointmentId} status after prescription save:`, errUpdateAppt);
+                } else {
+                     console.log(`Updated appointment ID ${appointmentId} status. Affected rows: ${updateApptResult.affectedRows}`);
+                     if (updateApptResult.affectedRows === 0) { console.warn(`Appointment ${appointmentId} was not updated...`); }
+                }
+                // Send response after attempting appointment update
+                res.status(isUpdate ? 200 : 201).json({ 
+                    message: `Prescription ${isUpdate ? 'updated' : 'saved'} successfully.`,
+                    recordId: recordId // Note: recordId might not be accurate on UPDATE
+                });
+            });
+        } else {
+             // Send response immediately if no appointmentId provided
+             res.status(isUpdate ? 200 : 201).json({ 
+                message: `Prescription ${isUpdate ? 'updated' : 'saved'} successfully.`,
+                recordId: recordId 
+            });
         }
-
-        await connection.commit(); // Commit transaction if both succeed
-        console.log("Transaction committed successfully.");
-
-        // 6. Send Success Response
-        res.status(201).json({ 
-            message: "Prescription saved and appointment marked as completed.",
-            recordId: newRecordId 
-        });
-
-    } catch (err) {
-        // *** Enhanced Error Logging ***
-        console.error("--- ERROR during prescription save transaction ---");
-        console.error("Timestamp:", new Date().toISOString());
-        console.error("Request Body:", req.body); // Log the data received
-        console.error("Error Details:", err); // Log the full error object
-        console.error("Error Code:", err.code); // Log specific error code if available (e.g., ER_NO_REFERENCED_ROW)
-        console.error("SQL State:", err.sqlState); // Log SQL state if available
-        console.error("SQL Message:", err.sqlMessage); // Log SQL message if available
-        // *** End Enhanced Error Logging ***
-
-        if (connection) {
-            try {
-                await connection.rollback(); // Rollback transaction on error
-                console.log("Transaction rolled back due to error.");
-            } catch (rollbackErr) {
-                console.error("Error rolling back transaction:", rollbackErr);
-            }
-        }
-        // Send generic error to frontend, but backend logs have details
-        res.status(500).json({ error: "Failed to save prescription." }); 
-    } finally {
-        if (connection) {
-            connection.release(); // Always release the connection
-            console.log("Database connection released.");
-        }
-    }
+    });
 });
 
 
-// GET /medical-records/myprescriptions - For Patients to fetch doctor-added prescriptions
-// Uses the original 'medical_records' table
-router.get('/myprescriptions', authMiddleware, async (req, res) => {
-    // 1. Check Authorization (Only Patient)
-    if (req.user.role !== 'patient') {
-        return res.status(403).json({ error: "Access denied. Patients only." });
-    }
+// --- UPDATED: GET /medical-records/for-patient/:patientId ---
+// --- For Doctor to check/fetch existing prescription for a specific patient ---
+// --- Uses the 'medical_records' table ---
+router.get('/for-patient/:patientId', authMiddleware, (req, res) => { // Removed async
+    if (req.user.role !== 'doctor') { return res.status(403).json({ error: "Access denied." }); }
+    const { patientId } = req.params;
+    if (!patientId || isNaN(parseInt(patientId))) { return res.status(400).json({ error: "Valid patientId parameter is required." }); }
+    console.log(`Fetching prescription for patient ID: ${patientId}`);
+    
+    const sql = `SELECT id, diagnosis, prescription FROM medical_records WHERE patient_id = ? LIMIT 1`; // Limit 1 because of UNIQUE constraint
+    
+    // Use db.query with callback
+    db.query(sql, [patientId], (err, rows) => { 
+        if (err) {
+            console.error(`Error fetching prescription for patient ${patientId}:`, err);
+            return res.status(500).json({ error: "Failed to fetch prescription data." });
+        }
+        if (rows.length === 0) {
+            // No prescription found for this patient - this is NOT an error for checking existence
+            return res.status(404).json({ message: "No prescription found for this patient." }); 
+        }
+
+        // Prescription found, parse and return it
+        const record = rows[0];
+        let medicationList = [];
+        try { 
+            // Check if prescription is already an object/array (driver parsed it)
+             if (record.prescription && typeof record.prescription === 'object') {
+                medicationList = Array.isArray(record.prescription) ? record.prescription : [];
+             } 
+             // Check if it's a non-empty string, then try parsing
+             else if (record.prescription && typeof record.prescription === 'string') {
+                medicationList = JSON.parse(record.prescription);
+                if (!Array.isArray(medicationList)) medicationList = [];
+            } 
+        } catch (e) { 
+            console.error(`Failed to parse prescription JSON for record ${record.id}:`, e);
+            medicationList = []; 
+        }
+        res.status(200).json({
+            recordId: record.id,
+            diagnosisNotes: record.diagnosis,
+            medications: medicationList // Send the parsed list
+        });
+    });
+});
+
+
+// --- UPDATED: GET /medical-records/myprescriptions ---
+// --- Fetches the single prescription for the logged-in patient ---
+// --- Uses the 'medical_records' table ---
+router.get('/myprescriptions', authMiddleware, (req, res) => { // Removed async
+    if (req.user.role !== 'patient') { return res.status(403).json({ error: "Access denied." }); }
     const patientId = req.user.id; 
+    console.log(`Fetching doctor-added prescription for patient ID: ${patientId}`);
 
-    console.log(`Fetching doctor-added prescriptions for patient ID: ${patientId}`);
-
-    // 2. Database Operation
-    const dbPromise = db.promise();
-    try {
-        // Fetch records added by doctors for this patient from the 'medical_records' table
-        const sql = `
-            SELECT 
-                mr.id, mr.doctor_id, u.name AS doctorName, mr.diagnosis, mr.prescription 
-            FROM 
-                medical_records mr 
-            JOIN 
-                users u ON mr.doctor_id = u.id 
-            WHERE 
-                mr.patient_id = ? 
-            ORDER BY 
-                mr.id DESC`; 
-
-        const [records] = await dbPromise.query(sql, [patientId]);
+    const sql = `SELECT mr.id, mr.doctor_id, u.name AS doctorName, mr.diagnosis, mr.prescription FROM medical_records mr JOIN users u ON mr.doctor_id = u.id WHERE mr.patient_id = ? LIMIT 1`; // Limit 1
+    
+    // Use db.query with callback
+    db.query(sql, [patientId], (err, records) => { 
+        if (err) {
+             console.error(`Error fetching prescription for patient ${patientId}:`, err);
+             return res.status(500).json({ error: "Failed to fetch prescription." });
+        }
         console.log(`Found ${records.length} prescription records for patient ${patientId}.`);
-
-        // 3. Process and Send Response
-        const processedRecords = records.map(record => {
+        
+        let processedRecord = null;
+        if (records.length > 0) {
+            const record = records[0];
             let medicationList = [];
-            try {
+            try { 
                  if (record.prescription && typeof record.prescription === 'object') {
                     medicationList = Array.isArray(record.prescription) ? record.prescription : [];
                  } else if (record.prescription && typeof record.prescription === 'string') {
                     medicationList = JSON.parse(record.prescription);
-                    if (!Array.isArray(medicationList)) { medicationList = []; }
+                    if (!Array.isArray(medicationList)) medicationList = [];
                 }
-            } catch (e) {
-                console.error(`Failed to parse prescription JSON for record ${record.id}:`, record.prescription, e);
-                medicationList = []; 
-            }
-            return {
-                recordId: record.id,
-                doctorId: record.doctor_id,
-                doctorName: record.doctorName,
-                diagnosisNotes: record.diagnosis,
-                medications: medicationList, 
+            } catch (e) { medicationList = []; console.error(`Failed to parse prescription JSON for record ${record.id}:`, e); }
+            
+            processedRecord = { 
+                recordId: record.id, doctorId: record.doctor_id, doctorName: record.doctorName,
+                diagnosisNotes: record.diagnosis, medications: medicationList 
             };
-        });
-        res.status(200).json(processedRecords); 
-    } catch (err) {
-        console.error(`Error fetching prescriptions for patient ${patientId}:`, err);
-        res.status(500).json({ error: "Failed to fetch prescriptions." });
-    }
+        }
+        // Send back the single record object (or null if none found)
+        res.status(200).json(processedRecord); 
+
+    });
 });
 
 

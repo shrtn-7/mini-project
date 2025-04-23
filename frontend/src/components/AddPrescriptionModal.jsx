@@ -1,36 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import dayjs from 'dayjs'; // For displaying appointment date
 
-// Simple unique ID generator for list keys
+// Simple unique ID generator for list keys - reset in useEffect
 let nextMedicationId = 1;
 
-function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
+// Add 'existingData' prop to the function signature
+function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave, existingData }) {
   // State for the list of medications { id, name, timings }
-  const [medications, setMedications] = useState([{ id: nextMedicationId++, name: '', timings: '' }]);
-  // State for overall diagnosis/notes 
-  const [diagnosisNotes, setDiagnosisNotes] = useState(''); 
+  const [medications, setMedications] = useState([]); // Initialize empty, useEffect will populate
+  // State for overall diagnosis/notes
+  const [diagnosisNotes, setDiagnosisNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Reset form when modal opens with new appointment info
+  // Determine mode based on whether existingData was passed and has content
+  const isUpdateMode = !!existingData && (existingData.diagnosisNotes || (Array.isArray(existingData.medications) && existingData.medications.length > 0));
+
+  // Updated useEffect to handle pre-population or reset
   useEffect(() => {
-    if (isOpen) {
-      // Reset ID counter if needed, or manage IDs differently for production
-      nextMedicationId = 1; 
-      setMedications([{ id: nextMedicationId++, name: '', timings: '' }]); // Start with one empty row
-      setDiagnosisNotes(''); // Clear notes
-      setError(''); // Clear errors
-      setIsLoading(false); // Reset loading state
+    if (isOpen && appointmentInfo) { // Ensure appointmentInfo is also present
+      setError('');
+      setIsLoading(false);
+      nextMedicationId = 1; // Reset unique ID counter for list keys
+
+      if (isUpdateMode && existingData) {
+        console.log("Modal opened in UPDATE mode with data:", existingData);
+        // Pre-populate form with existing data
+        setDiagnosisNotes(existingData.diagnosisNotes || '');
+
+        // Ensure medications is an array and add unique IDs for the list keys
+        const initialMeds = Array.isArray(existingData.medications)
+          ? existingData.medications.map(med => ({
+              id: nextMedicationId++,
+              name: med.name || '', // Ensure name exists
+              timings: med.timings || '' // Ensure timings exist
+            }))
+          : [];
+
+        // Ensure at least one row exists, even if fetched data had no medications
+        setMedications(initialMeds.length > 0 ? initialMeds : [{ id: nextMedicationId++, name: '', timings: '' }]);
+
+      } else {
+         console.log("Modal opened in ADD mode");
+        // Reset form for "Add" mode
+        setDiagnosisNotes('');
+        setMedications([{ id: nextMedicationId++, name: '', timings: '' }]); // Start with one empty row
+      }
+    } else if (!isOpen) {
+        // Optional: Clear state when modal is fully closed if needed
+        // setMedications([]);
+        // setDiagnosisNotes('');
     }
-  }, [isOpen, appointmentInfo]); // Dependency on isOpen and appointmentInfo
+  }, [isOpen, existingData, isUpdateMode, appointmentInfo]); // Add all relevant dependencies
 
   // Handle changes in medication name or timings input
   const handleMedicationChange = (id, field, value) => {
-    setMedications(prevMeds => 
-      prevMeds.map(med => 
+    setMedications(prevMeds =>
+      prevMeds.map(med =>
         med.id === id ? { ...med, [field]: value } : med
       )
     );
+     if (error) setError(''); // Clear error on input change
   };
 
   // Add a new empty medication row
@@ -45,8 +75,7 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
   const handleDeleteMedication = (idToDelete) => {
     if (medications.length <= 1) {
       setError("At least one medication entry is required.");
-      // Clear error after a delay
-      setTimeout(() => setError(''), 3000);
+      setTimeout(() => setError(''), 3000); // Clear error after a delay
       return; // Don't delete the last item
     }
     setError(''); // Clear error if deleting is possible
@@ -56,34 +85,42 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
   // Handle saving the prescription
   const handleSave = async () => {
     setError(''); // Clear previous errors
-    
-    // Basic validation: Check if all medication names and timings are filled
-    const incompleteMed = medications.find(med => !med.name.trim() || !med.timings.trim());
+
+    // Validation: Check if patient info is available
+    if (!appointmentInfo?.patient_id || !appointmentInfo?.id) {
+        setError("Patient or Appointment information is missing. Cannot save.");
+        return;
+    }
+
+    // Validation: Check if all medication names and timings are filled
+    const incompleteMed = medications.find(med => !med.name?.trim() || !med.timings?.trim());
     if (incompleteMed) {
         setError("Please fill in both Medicine Name and Timings for all entries.");
         return;
     }
 
     setIsLoading(true);
-    const prescriptionData = {
-        patientId: appointmentInfo?.patient_id,
-        appointmentId: appointmentInfo?.id, // Include appointment ID 
-        diagnosis: diagnosisNotes, // Include diagnosis/notes
-        medicationList: medications.map(({ name, timings }) => ({ name, timings })) // Send only name and timings
+    // Prepare payload for the backend
+    const prescriptionPayload = {
+        patientId: appointmentInfo.patient_id, // Get patientId from appointmentInfo
+        appointmentId: appointmentInfo.id, // Include appointment ID for status update potentially
+        diagnosis: diagnosisNotes,
+        // Send only name and timings, remove the temporary 'id' used for keys
+        medicationList: medications.map(({ name, timings }) => ({ name, timings }))
     };
 
     // Call the onSave prop function passed from the parent component
     try {
-        await onSave(prescriptionData); 
-        // Parent component (Dashboard/AllAppointments) will handle closing the modal on success
+        await onSave(prescriptionPayload);
+        // Parent component (Dashboard/AllAppointments) handles closing the modal on success
     } catch (saveError) {
-        setError(saveError.message || "Failed to save prescription."); // Display error from parent
+        setError(saveError.message || `Failed to ${isUpdateMode ? 'update' : 'save'} prescription.`); // Display error from parent
     } finally {
         setIsLoading(false);
     }
   };
 
-  // Don't render anything if the modal is not open
+  // Don't render anything if the modal is not open or essential info is missing
   if (!isOpen || !appointmentInfo) return null;
 
   return (
@@ -91,11 +128,13 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 transition-opacity duration-300 ease-out">
       {/* Modal Content */}
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col transition-transform duration-300 ease-out scale-95 opacity-0 animate-modal-scale-in">
-        {/* Modal Header */}
+        {/* Modal Header - Dynamic Title */}
         <div className="flex justify-between items-center p-4 border-b">
-          <h3 className="text-xl font-semibold text-gray-800">Add Prescription</h3>
-          <button 
-            onClick={onClose} 
+          <h3 className="text-xl font-semibold text-gray-800">
+             {isUpdateMode ? 'Update Prescription' : 'Add Prescription'}
+          </h3>
+          <button
+            onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl font-bold focus:outline-none"
             aria-label="Close modal"
           >
@@ -108,7 +147,7 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
           {/* Patient Info */}
           <div className="mb-4 p-3 bg-gray-50 rounded border">
               <p className="text-sm"><strong>Patient:</strong> {appointmentInfo.patientName} (ID: {appointmentInfo.patient_id})</p>
-              <p className="text-sm"><strong>Appointment:</strong> {dayjs(appointmentInfo.appointment_date).format("ddd, MMM D,<y_bin_46> - h:mm A")}</p>
+              <p className="text-sm"><strong>Appointment:</strong> {dayjs(appointmentInfo.appointment_date).format("ddd, MMM D, YYYY - h:mm A")}</p>
           </div>
 
           {/* Optional Diagnosis/Notes */}
@@ -123,7 +162,7 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
                   placeholder="Enter any relevant diagnosis or notes..."
               />
           </div>
-          
+
           <hr/>
 
           {/* Medication List */}
@@ -159,7 +198,7 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
                   </div>
                 </div>
                 {/* Delete Button */}
-                <div className="flex-shrink-0 mt-2 sm:mt-0 sm:self-end"> 
+                <div className="flex-shrink-0 mt-2 sm:mt-0 sm:self-end">
                   <button
                     type="button" // Prevent form submission
                     onClick={() => handleDeleteMedication(med.id)}
@@ -193,11 +232,11 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
           {error && <p className="text-sm text-red-600 mt-2 p-2 bg-red-50 rounded border border-red-200">{error}</p>}
         </div>
 
-        {/* Modal Footer */}
+        {/* Modal Footer - Dynamic Button Text */}
         <div className="flex justify-end items-center p-4 border-t space-x-3 bg-gray-50 rounded-b-lg">
-          <button 
+          <button
             type="button" // Prevent form submission
-            onClick={onClose} 
+            onClick={onClose}
             className="px-4 py-2 rounded-md text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
             Cancel
@@ -208,7 +247,7 @@ function AddPrescriptionModal({ isOpen, onClose, appointmentInfo, onSave }) {
             disabled={isLoading}
             className="px-4 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {isLoading ? 'Saving...' : 'Save Prescription'}
+            {isLoading ? 'Saving...' : (isUpdateMode ? 'Update Prescription' : 'Save Prescription')}
           </button>
         </div>
       </div>

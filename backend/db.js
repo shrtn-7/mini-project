@@ -1,12 +1,12 @@
 const mysql = require("mysql2");
 require("dotenv").config(); // Load environment variables from .env file
 
-// Create MySQL Connection
+// --- Create MySQL Single Connection ---
 const db = mysql.createConnection({
-    host: process.env.DB_HOST, // Database host
-    user: process.env.DB_USER, // Database username
-    password: process.env.DB_PASSWORD, // Database password
-    database: process.env.DB_NAME // Database name
+    host: process.env.DB_HOST, 
+    user: process.env.DB_USER, 
+    password: process.env.DB_PASSWORD, 
+    database: process.env.DB_NAME 
 });
 
 // Connect to the Database
@@ -15,12 +15,16 @@ db.connect(err => {
         console.error("❌ Database connection failed: " + err.message);
         console.error("➡️ Host:", process.env.DB_HOST);
         console.error("➡️ User:", process.env.DB_USER);
+        // Avoid logging password
         console.error("➡️ DB Name:", process.env.DB_NAME);
         console.error("➡️ Error:", err);
+        // Consider exiting the process if DB connection is critical for startup
+        // process.exit(1); 
         return;
     }
-    console.log("✅ Connected to MySQL Database!");
+    // *** Use the simpler connection message ***
+    console.log("✅ Connected to MySQL Database!"); 
 });
 
-// Export database connection
-module.exports = db;
+// --- Export the single connection object ---
+module.exports = db; 
