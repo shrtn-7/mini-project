@@ -36,14 +36,6 @@ function DoctorDashboard() {
   const [isLoadingPrescriptionCheck, setIsLoadingPrescriptionCheck] = useState(false); // Loading state for checking existing prescription
   // --- End Prescription Modal State ---
 
-  // State for Availability Management section
-  const [blockedDays, setBlockedDays] = useState([]);
-  const [blockedSlots, setBlockedSlots] = useState([]);
-  const [blockDayDate, setBlockDayDate] = useState('');
-  const [blockSlotDate, setBlockSlotDate] = useState('');
-  const [blockSlotTime, setBlockSlotTime] = useState('');
-  const [availabilityError, setAvailabilityError] = useState('');
-  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   // Get auth token
   const token = localStorage.getItem("token");
@@ -206,75 +198,6 @@ function DoctorDashboard() {
   // --- End Prescription Handling ---
 
 
-  // --- Availability Handlers ---
-  const handleBlockDay = async (e) => {
-      e.preventDefault();
-      if (!blockDayDate || !token) return;
-      setAvailabilityLoading(true); setAvailabilityError('');
-      try {
-          await axios.post('http://localhost:5000/availability/block/day', { block_date: blockDayDate }, { headers: { Authorization: `Bearer ${token}` } });
-          setBlockedDays(prev => [...prev, blockDayDate].sort());
-          setBlockDayDate(''); // Clear input
-          alert(`Blocked date: ${dayjs(blockDayDate).format('YYYY-MM-DD')}`);
-      } catch (err) {
-          console.error("Error blocking day:", err);
-          setAvailabilityError(err.response?.data?.error || 'Failed to block day.');
-      } finally {
-          setAvailabilityLoading(false);
-      }
-  };
-
-  const handleUnblockDay = async (dateToUnblock) => {
-       if (!dateToUnblock || !token) return;
-       setAvailabilityLoading(true); setAvailabilityError('');
-       try {
-           await axios.delete(`http://localhost:5000/availability/unblock/day/${dateToUnblock}`, { headers: { Authorization: `Bearer ${token}` } });
-           setBlockedDays(prev => prev.filter(d => d !== dateToUnblock));
-           alert(`Unblocked date: ${dayjs(dateToUnblock).format('YYYY-MM-DD')}`);
-       } catch (err) {
-           console.error("Error unblocking day:", err);
-           setAvailabilityError(err.response?.data?.error || 'Failed to unblock day.');
-       } finally {
-           setAvailabilityLoading(false);
-       }
-  };
-
-  const handleBlockSlot = async (e) => {
-     e.preventDefault();
-     if (!blockSlotDate || !blockSlotTime || !token) return;
-     const slotDateTime = `${blockSlotDate} ${blockSlotTime}:00`; // Combine date and time
-     setAvailabilityLoading(true); setAvailabilityError('');
-     try {
-         await axios.post('http://localhost:5000/availability/block/slot', { slot_datetime: slotDateTime }, { headers: { Authorization: `Bearer ${token}` } });
-         setBlockedSlots(prev => [...prev, slotDateTime].sort());
-         setBlockSlotDate(''); // Clear inputs
-         setBlockSlotTime('');
-         alert(`Blocked slot: ${dayjs(slotDateTime).format('YYYY-MM-DD h:mm A')}`);
-     } catch (err) {
-         console.error("Error blocking slot:", err);
-         setAvailabilityError(err.response?.data?.error || 'Failed to block slot.');
-     } finally {
-         setAvailabilityLoading(false);
-     }
-  };
-
-  const handleUnblockSlot = async (dateTimeToUnblock) => {
-      if (!dateTimeToUnblock || !token) return;
-      setAvailabilityLoading(true); setAvailabilityError('');
-      try {
-          // Encode the datetime string for the URL parameter
-          const encodedDateTime = encodeURIComponent(dateTimeToUnblock);
-          await axios.delete(`http://localhost:5000/availability/unblock/slot/${encodedDateTime}`, { headers: { Authorization: `Bearer ${token}` } });
-          setBlockedSlots(prev => prev.filter(s => s !== dateTimeToUnblock));
-          alert(`Unblocked slot: ${dayjs(dateTimeToUnblock).format('YYYY-MM-DD h:mm A')}`);
-      } catch (err) {
-          console.error("Error unblocking slot:", err);
-          setAvailabilityError(err.response?.data?.error || 'Failed to unblock slot.');
-      } finally {
-          setAvailabilityLoading(false);
-      }
-  };
-
   // Generate time options for blocking specific slots within working hours
   const timeOptionsForBlocking = Array.from({ length: WORK_END_HOUR - WORK_START_HOUR }, (_, i) => {
       const hour = WORK_START_HOUR + i;
@@ -359,59 +282,6 @@ function DoctorDashboard() {
         )}
       </div>
       {/* --- End Appointments Section --- */}
-
-      {/* --- Availability Section --- */}
-       <div className="mt-8 border-t pt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-         {/* Block Full Days Section */}
-         <section className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-           <h3 className="text-xl font-semibold mb-4 text-gray-700">Manage Full Day Unavailability</h3>
-           <form onSubmit={handleBlockDay} className="flex items-center gap-3 mb-4">
-             <input type="date" value={blockDayDate} onChange={(e) => setBlockDayDate(e.target.value)} min={dayjs().format("YYYY-MM-DD")} required className="border p-2 rounded-md flex-grow focus:ring-blue-500 focus:border-blue-500"/>
-             <button type="submit" className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm disabled:opacity-50" disabled={availabilityLoading}>Block Day</button>
-           </form>
-           <h4 className="text-lg font-medium mb-2 text-gray-600">Blocked Days:</h4>
-           {availabilityLoading && blockedDays.length === 0 ? <p className="text-sm text-gray-500">Loading...</p> : null}
-           {!availabilityLoading && blockedDays.length === 0 ? <p className="text-sm text-gray-500 italic">No full days blocked.</p> : null}
-           {blockedDays.length > 0 && (
-             <ul className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
-               {blockedDays.map((date) => (
-                 <li key={date} className="flex justify-between items-center p-2 bg-red-100 rounded text-sm">
-                   <span>{dayjs(date).format('ddd, MMM D, YYYY')}</span>
-                   <button onClick={() => handleUnblockDay(date)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs disabled:opacity-50" disabled={availabilityLoading}>Make Available</button>
-                 </li>
-               ))}
-             </ul>
-           )}
-         </section>
-         {/* Block Specific Slots Section */}
-         <section className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-           <h3 className="text-xl font-semibold mb-4 text-gray-700">Manage Specific Slot Unavailability</h3>
-           <form onSubmit={handleBlockSlot} className="flex flex-wrap items-center gap-3 mb-4">
-             <input type="date" value={blockSlotDate} onChange={(e) => setBlockSlotDate(e.target.value)} min={dayjs().format("YYYY-MM-DD")} required className="border p-2 rounded-md focus:ring-blue-500 focus:border-blue-500"/>
-             <select value={blockSlotTime} onChange={(e) => setBlockSlotTime(e.target.value)} required className="border p-2 rounded-md focus:ring-blue-500 focus:border-blue-500">
-               <option value="">Select Time</option>
-               {timeOptionsForBlocking.map(time => (<option key={time} value={time}>{dayjs(`1970-01-01 ${time}`).format('h:mm A')}</option>))}
-             </select>
-             <button type="submit" className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md text-sm disabled:opacity-50" disabled={availabilityLoading}>Block Slot</button>
-           </form>
-           <h4 className="text-lg font-medium mb-2 text-gray-600">Blocked Slots:</h4>
-           {availabilityLoading && blockedSlots.length === 0 ? <p className="text-sm text-gray-500">Loading...</p> : null}
-           {!availabilityLoading && blockedSlots.length === 0 ? <p className="text-sm text-gray-500 italic">No specific time slots blocked.</p> : null}
-           {blockedSlots.length > 0 && (
-             <ul className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
-               {blockedSlots.map((datetime) => (
-                 <li key={datetime} className="flex justify-between items-center p-2 bg-yellow-100 rounded text-sm">
-                   <span>{dayjs(datetime).format('ddd, MMM D - h:mm A')}</span>
-                   <button onClick={() => handleUnblockSlot(datetime)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs disabled:opacity-50" disabled={availabilityLoading}>Unblock Slot</button>
-                 </li>
-               ))}
-             </ul>
-           )}
-         </section>
-         {/* Availability Error Display */}
-         {availabilityError && <p className="text-red-600 text-center font-medium mt-4 col-span-1 md:col-span-2 bg-red-100 p-2 rounded">{availabilityError}</p>}
-       </div>
-      {/* --- End Availability Section --- */}
 
       {/* Render Patient Details Modal */}
       <PatientDetailsModal
