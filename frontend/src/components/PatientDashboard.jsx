@@ -19,6 +19,12 @@ function PatientDashboard() {
   const [isLoadingRecords, setIsLoadingRecords] = useState(false); 
   const [recordsError, setRecordsError] = useState(''); // State for record fetching errors
 
+  // *** NEW: State for doctor-added prescriptions ***
+  const [prescriptions, setPrescriptions] = useState([]);
+  const [isLoadingPrescriptions, setIsLoadingPrescriptions] = useState(false);
+  const [prescriptionsError, setPrescriptionsError] = useState('');
+  // *** End New State ***
+
   // Get auth token
   const token = localStorage.getItem("token");
 
@@ -32,12 +38,14 @@ function PatientDashboard() {
         const res = await axios.get("http://localhost:5000/appointments", {
           headers: { Authorization: `Bearer ${token}` },
         });
+        // Sort appointments by date ASC
         const sortedAppointments = res.data.sort((a, b) => 
             dayjs(a.appointment_date).valueOf() - dayjs(b.appointment_date).valueOf()
         );
         setAppointments(sortedAppointments);
       } catch (err) {
         console.error("Error fetching appointments", err);
+        // Optionally set an error state for appointments
       } finally {
         setIsLoadingAppointments(false);
       }
@@ -49,10 +57,11 @@ function PatientDashboard() {
       setIsLoadingRecords(true);
       setRecordsError(''); 
       try {
+        // Use the endpoint that fetches records for the logged-in patient
         const res = await axios.get("http://localhost:5000/patient/detailed-records", { 
           headers: { Authorization: `Bearer ${token}` },
         });
-        console.log("Fetched Detailed Records Data:", res.data); // *** DEBUG LOG ***
+        // console.log("Fetched Detailed Records Data:", res.data); // Keep for debugging if needed
         // Ensure the response is an array before setting state
         if (Array.isArray(res.data)) {
             setDetailedRecords(res.data); 
@@ -69,11 +78,38 @@ function PatientDashboard() {
       }
     };
 
+    // *** NEW: Fetch doctor-added prescriptions ***
+    const fetchPrescriptions = async () => {
+      if (!token) return;
+      setIsLoadingPrescriptions(true);
+      setPrescriptionsError('');
+      try {
+          // Call the new backend endpoint
+          const res = await axios.get("http://localhost:5000/medical-records/myprescriptions", {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+           if (Array.isArray(res.data)) {
+              setPrescriptions(res.data); // Set the fetched prescriptions
+          } else {
+              console.error("Received non-array data for prescriptions:", res.data);
+              setPrescriptions([]);
+              setPrescriptionsError("Received invalid data format for prescriptions.");
+          }
+      } catch (err) {
+          console.error("Error fetching prescriptions:", err);
+          setPrescriptionsError("Could not load prescriptions.");
+      } finally {
+          setIsLoadingPrescriptions(false);
+      }
+  };
+  // *** End New Fetch Function ***
+
+    // Fetch data if token exists
     if (token) {
       fetchAppointments();
       fetchDetailedRecords(); 
     }
-  }, [token]); 
+  }, [token]); // Dependency array includes token
 
   // Handler to navigate to appointment booking page
   const handleBookAppointment = () => {
@@ -82,33 +118,39 @@ function PatientDashboard() {
 
   // Handler to navigate to the record upload page
   const handleGoToUpload = () => {
-    navigate("/upload-record"); 
+    navigate("/upload-record"); // Navigate to the route defined in App.jsx
   };
 
   // Handler to cancel an appointment
   const handleCancelAppointment = async (id) => {
+    // Find appointment details for confirmation message
     const appointmentToCancel = appointments.find(appt => appt.id === id);
     if (!appointmentToCancel) return;
+
     const formattedTime = dayjs(appointmentToCancel.appointment_date).format("h:mm A");
     const formattedDate = dayjs(appointmentToCancel.appointment_date).format("MMMM D, YYYY");
+
+    // Ask for confirmation
     const confirmCancel = window.confirm(`Are you sure you want to cancel the appointment for ${formattedTime} on ${formattedDate}?`);
     if (!confirmCancel) return;
 
     try {
+      // Send delete request to backend
       await axios.delete(`http://localhost:5000/appointments/cancel/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      // Remove appointment from local state immediately
       setAppointments((prev) => prev.filter((appt) => appt.id !== id));
-      alert("Appointment cancelled successfully!"); 
+      alert("Appointment cancelled successfully!"); // Provide feedback
     } catch (err) {
       console.error("Error cancelling appointment", err);
-      alert(err.response?.data?.error || "Failed to cancel appointment."); 
+      alert(err.response?.data?.error || "Failed to cancel appointment."); // Show error
     }
   };
 
   // --- JSX Rendering ---
   return (
-    <div className="p-4 md:p-6 space-y-8"> 
+    <div className="p-4 md:p-6 space-y-8"> {/* Added responsive padding and spacing */}
       {/* Welcome Message */}
       <div>
         <h2 className="text-2xl md:text-3xl font-bold text-gray-800">Welcome, {user?.name || "Patient"}!</h2>
@@ -117,14 +159,16 @@ function PatientDashboard() {
 
       {/* Appointments Section */}
       <section className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-        {/* ... (Appointments list remains the same) ... */}
-         <h3 className="text-xl font-semibold mb-4 text-gray-700">Appointments</h3>
+        <h3 className="text-xl font-semibold mb-4 text-gray-700">Appointments</h3>
+        {/* Button to book new appointment */}
         <button
           onClick={handleBookAppointment}
           className="mb-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
         >
           Book New Appointment
         </button>
+
+        {/* Upcoming Appointments List */}
         <h4 className="text-lg font-medium mb-3 text-gray-600">Upcoming</h4>
         {isLoadingAppointments ? (
             <p className="text-gray-500">Loading appointments...</p>
@@ -135,6 +179,7 @@ function PatientDashboard() {
                 key={appointment.id}
                 className="flex flex-col sm:flex-row justify-between items-start sm:items-center border p-3 rounded shadow-sm bg-gray-50"
               >
+                {/* Appointment details */}
                 <div className="mb-2 sm:mb-0">
                   <span className="font-medium text-gray-800">
                     {dayjs(appointment.appointment_date).format("ddd, MMM D, YYYY - h:mm A")}
@@ -147,6 +192,7 @@ function PatientDashboard() {
                     {appointment.status}
                   </span>
                 </div>
+                {/* Cancel button */}
                 <button
                   onClick={() => handleCancelAppointment(appointment.id)}
                   className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors text-sm font-medium flex-shrink-0"
@@ -161,6 +207,51 @@ function PatientDashboard() {
         )}
       </section>
 
+      {/* --- NEW: Doctor's Prescriptions Section --- */}
+      <section className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
+        <h3 className="text-xl font-semibold mb-4 text-gray-700">Doctor's Prescriptions</h3>
+        {isLoadingPrescriptions ? (
+            <p className="text-gray-500">Loading prescriptions...</p>
+        ) : prescriptionsError ? (
+            <p className="text-red-600 bg-red-100 p-3 rounded">{prescriptionsError}</p>
+        ) : prescriptions.length > 0 ? (
+            <ul className="space-y-4">
+            {prescriptions.map((record) => (
+                <li key={record.recordId} className="p-4 rounded-lg border border-gray-200 bg-blue-50">
+                {/* Prescription Metadata (Optional: Add date if needed) */}
+                {/* <p className="text-xs text-gray-500 mb-2">Prescribed on: {dayjs(record.createdAt).format('YYYY-MM-DD HH:mm')}</p> */}
+                <p className="text-sm mb-2"><strong>Prescribed by:</strong> Dr. {record.doctorName}</p>
+                
+                {/* Diagnosis/Notes */}
+                {record.diagnosisNotes && (
+                    <div className="mb-2">
+                        <strong className="block text-sm text-gray-800">Diagnosis/Notes:</strong>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.diagnosisNotes}</p>
+                    </div>
+                )}
+                
+                {/* Medication List */}
+                {Array.isArray(record.medications) && record.medications.length > 0 && (
+                    <div>
+                        <strong className="block text-sm text-gray-800 mb-1">Medications:</strong>
+                        <ul className="space-y-1 ml-2">
+                            {record.medications.map((med, index) => (
+                                <li key={index} className="text-sm text-gray-700 border-l-2 border-blue-200 pl-2">
+                                    <strong>{med.name || 'Unnamed Medication'}:</strong> {med.timings || 'No timings specified'}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+                </li>
+            ))}
+            </ul>
+        ) : (
+            <p className="text-gray-500 italic">No prescriptions from the doctor found.</p>
+        )}
+       </section>
+       {/* --- End Doctor's Prescriptions Section --- */}
+
       {/* Medical Records Section */}
       <section className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
         <h3 className="text-xl font-semibold mb-4 text-gray-700">Medical Records</h3>
@@ -173,7 +264,7 @@ function PatientDashboard() {
         </button>
 
         {/* Records History List */}
-        <h4 className="text-lg font-medium mb-3 text-gray-600">History</h4>
+        <h4 className="text-lg font-medium mb-3 text-gray-600">Your Uploaded History</h4>
         {isLoadingRecords ? (
           <p className="text-gray-500">Loading records history...</p>
         ) : recordsError ? (
@@ -200,10 +291,10 @@ function PatientDashboard() {
                   </div>
                 </div>
                 
-                {/* --- CORRECTED Files Section --- */}
+                {/* Files Section */}
                 <div className="mt-3 space-y-2">
                   {/* Display Prescription Links */}
-                  {/* Check if prescriptions array exists */}
+                  {/* Check if prescriptions array exists (it should, based on backend fix) */}
                   {Array.isArray(record.prescriptions) && ( 
                     <div>
                       <strong className="text-sm font-medium text-gray-800">Uploaded Prescriptions:</strong>
@@ -215,12 +306,14 @@ function PatientDashboard() {
                             url && typeof url === 'string' ? (
                               <li key={`rec-${record.id}-presc-${index}`} className="text-sm">
                                 <a 
+                                  // Construct the full URL assuming backend serves from /uploads
                                   href={`http://localhost:5000${url}`} 
                                   target="_blank" 
                                   rel="noopener noreferrer" 
                                   className="text-blue-600 hover:underline hover:text-blue-800"
-                                  title={`View Prescription PDF ${index + 1}`} 
+                                  title={`View Prescription PDF ${index + 1}`} // Accessibility
                                 >
+                                  {/* Extract filename or use generic text */}
                                   {url.substring(url.lastIndexOf('/') + 1) || `Prescription Document ${index + 1}`}
                                 </a>
                               </li>
